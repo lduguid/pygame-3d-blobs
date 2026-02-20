@@ -36,9 +36,6 @@ def color_lightness(color):
     return (0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]) / 255.0
 
 
-ORBIT_SPEED = 0.15
-
-
 class Blob:
     def __init__(self, x, y, radius, color):
         self.radius = radius
@@ -63,10 +60,10 @@ class Blob:
         self.orbit_angle = math.atan2(dy, dx)
         self.orbit_dist = math.sqrt(dx * dx + dy * dy)
 
-    def update(self, t):
-        angle = self.orbit_angle + t * ORBIT_SPEED
-        base_x = self.centroid_x + math.cos(angle) * self.orbit_dist
-        base_y = self.centroid_y + math.sin(angle) * self.orbit_dist
+    def update(self, t, orbit_speed, centroid_x, centroid_y):
+        angle = self.orbit_angle + t * orbit_speed
+        base_x = centroid_x + math.cos(angle) * self.orbit_dist
+        base_y = centroid_y + math.sin(angle) * self.orbit_dist
         self.x = base_x + math.sin(t * self.freq_x + self.phase_x) * self.amp_x
         self.y = base_y + math.sin(t * self.freq_y + self.phase_y) * self.amp_y
         self.scale = 1.0 + math.sin(t * self.scale_freq + self.scale_phase) * self.scale_amp
@@ -80,38 +77,118 @@ class Blob:
         surface.blit(scaled, (sx - w // 2, sy - h // 2))
 
 
-colors = [
+ALL_COLORS = [
     (80, 200, 255),
+    (50, 160, 220),
+    (110, 230, 255),
     (255, 100, 180),
+    (220, 60, 140),
+    (255, 140, 200),
     (120, 255, 120),
+    (80, 210, 80),
+    (160, 255, 160),
     (255, 200, 60),
+    (220, 170, 30),
+    (255, 220, 100),
     (180, 120, 255),
+    (140, 80, 220),
+    (210, 160, 255),
     (255, 130, 60),
     (60, 255, 200),
+    (255, 80, 80),
+    (200, 200, 200),
+    (30, 180, 180),
 ]
 
-blobs = []
-for i in range(7):
-    x = random.randint(150, WIDTH - 150)
-    y = random.randint(150, HEIGHT - 150)
-    r = random.randint(50, 100)
-    blob = Blob(x, y, r, colors[i % len(colors)])
-    blob.init_x = x
-    blob.init_y = y
-    blobs.append(blob)
+CLUSTER_LAYOUTS = ["ring", "scatter", "grid", "spiral", "tight"]
 
-centroid_x = sum(b.init_x for b in blobs) / len(blobs)
-centroid_y = sum(b.init_y for b in blobs) / len(blobs)
-for blob in blobs:
-    blob.centroid_x = centroid_x
-    blob.centroid_y = centroid_y
-    blob.init_orbit(centroid_x, centroid_y)
+
+class Cluster:
+    def __init__(self, cx, cy, layout, blob_count, orbit_speed):
+        self.centroid_x = cx
+        self.centroid_y = cy
+        self.orbit_speed = orbit_speed
+        self.blobs = []
+        positions = self._generate_layout(cx, cy, layout, blob_count)
+        for i, (bx, by) in enumerate(positions):
+            r = random.randint(30, 70)
+            color = random.choice(ALL_COLORS)
+            blob = Blob(bx, by, r, color)
+            blob.init_x = bx
+            blob.init_y = by
+            self.blobs.append(blob)
+        for blob in self.blobs:
+            blob.init_orbit(self.centroid_x, self.centroid_y)
+
+    def _generate_layout(self, cx, cy, layout, count):
+        positions = []
+        if layout == "ring":
+            ring_radius = random.uniform(80, 150)
+            for i in range(count):
+                angle = math.tau * i / count + random.uniform(-0.15, 0.15)
+                px = cx + math.cos(angle) * ring_radius
+                py = cy + math.sin(angle) * ring_radius
+                positions.append((px, py))
+        elif layout == "scatter":
+            for _ in range(count):
+                px = cx + random.uniform(-140, 140)
+                py = cy + random.uniform(-140, 140)
+                positions.append((px, py))
+        elif layout == "grid":
+            cols = math.ceil(math.sqrt(count))
+            spacing = 70
+            for i in range(count):
+                gx = (i % cols) * spacing - (cols - 1) * spacing / 2
+                gy = (i // cols) * spacing - (cols - 1) * spacing / 2
+                positions.append((cx + gx, cy + gy))
+        elif layout == "spiral":
+            for i in range(count):
+                frac = i / max(1, count - 1)
+                angle = frac * math.tau * 2
+                dist = 40 + frac * 120
+                px = cx + math.cos(angle) * dist
+                py = cy + math.sin(angle) * dist
+                positions.append((px, py))
+        elif layout == "tight":
+            for _ in range(count):
+                angle = random.uniform(0, math.tau)
+                dist = random.uniform(20, 80)
+                px = cx + math.cos(angle) * dist
+                py = cy + math.sin(angle) * dist
+                positions.append((px, py))
+        return positions
+
+    def update(self, t):
+        for blob in self.blobs:
+            blob.update(t, self.orbit_speed, self.centroid_x, self.centroid_y)
+
+    def get_blobs(self):
+        return self.blobs
+
+
+NUM_CLUSTERS = 12
+clusters = []
+margin = 250
+for i in range(NUM_CLUSTERS):
+    cx = random.randint(margin, WIDTH * 3 - margin)
+    cy = random.randint(margin, HEIGHT * 3 - margin)
+    layout = CLUSTER_LAYOUTS[i % len(CLUSTER_LAYOUTS)]
+    blob_count = random.randint(5, 9)
+    orbit_speed = random.choice([
+        random.uniform(0.08, 0.2),
+        random.uniform(0.3, 0.6),
+        random.uniform(0.7, 1.2),
+    ]) * random.choice([-1, 1])
+    clusters.append(Cluster(cx, cy, layout, blob_count, orbit_speed))
+
+all_centroids_x = [c.centroid_x for c in clusters]
+all_centroids_y = [c.centroid_y for c in clusters]
+cam_x = sum(all_centroids_x) / len(all_centroids_x)
+cam_y = sum(all_centroids_y) / len(all_centroids_y)
 
 running = True
 t = 0.0
-zoom = 1.0
-cam_x = WIDTH / 2
-cam_y = HEIGHT / 2
+zoom = 0.35
 
 while running:
     for event in pygame.event.get():
@@ -124,7 +201,7 @@ while running:
             world_x = (mouse_x - WIDTH / 2) / zoom + cam_x
             world_y = (mouse_y - HEIGHT / 2) / zoom + cam_y
             zoom *= 1.1 ** event.y
-            zoom = max(0.1, min(zoom, 10.0))
+            zoom = max(0.05, min(zoom, 10.0))
             cam_x = world_x - (mouse_x - WIDTH / 2) / zoom
             cam_y = world_y - (mouse_y - HEIGHT / 2) / zoom
 
@@ -144,11 +221,13 @@ while running:
 
     screen.fill((15, 10, 30))
 
-    for blob in blobs:
-        blob.update(t)
+    all_blobs = []
+    for cluster in clusters:
+        cluster.update(t)
+        all_blobs.extend(cluster.get_blobs())
 
-    blobs.sort(key=lambda b: b.scale)
-    for blob in blobs:
+    all_blobs.sort(key=lambda b: b.scale)
+    for blob in all_blobs:
         blob.draw(screen, zoom, cam_x, cam_y)
 
     pygame.display.flip()
